@@ -604,7 +604,7 @@ def connect(simulation,
                     if simulation.params['procedural_connectivity'] 
                     else 1)
 
-    matrix_type = "PROCEDURAL_PROCEDURALG" if simulation.params['procedural_connectivity']  else "SPARSE_INDIVIDUALG"
+    matrix_type = "PROCEDURAL" if simulation.params['procedural_connectivity']  else "SPARSE"
 
     network = simulation.network
     synapses = extract_area_dict(network.synapses,
