@@ -29,7 +29,8 @@ from .default_params import nested_update, sim_params
 from .default_params import check_custom_params
 from dicthash import dicthash
 from pygenn import (GeNNModel, PlogSeverity, SpanType, VarLocation, 
-                    init_var, init_sparse_connectivity)
+                    init_postsynaptic, init_sparse_connectivity,
+                    init_var, init_weight_update)
 from pygenn.cuda_backend import BlockSizeSelect, DeviceSelect
 from scipy.stats import norm
 from six import iteritems, itervalues
@@ -639,17 +640,17 @@ def connect(simulation,
                 v = network.params['delay_params']['interarea_speed']
                 s = network.distances[target_area.name][source_area.name]
                 mean_delay = s / v
-            
+
             if 'E' in source:
                 exp_curr_params.update({'tau': network.params['neuron_params']['single_neuron_dict']['tau_syn_ex']})
                 syn_weight.update({'min': 0., 'max': float(np.finfo(np.float32).max)})
             else:
                 exp_curr_params.update({'tau': network.params['neuron_params']['single_neuron_dict']['tau_syn_in']})
                 syn_weight.update({'min': float(-np.finfo(np.float32).max), 'max': 0.})
-            
+
             delay_sd = mean_delay * network.params['delay_params']['delay_rel']
 
-            
+
             syn_delay = {'min': simulation.params['dt'],
                          'max': max_delay,
                          'mean': mean_delay,
@@ -663,8 +664,8 @@ def connect(simulation,
             syn_pop = simulation.model.add_synapse_population(source_genn_pop.name + "_" + target_genn_pop.name, 
                 matrix_type, 0,
                 source_genn_pop, target_genn_pop,
-                "StaticPulseDendriticDelay", {}, syn_spec, {}, {},
-                "ExpCurr", exp_curr_params, {},
+                init_weight_update("StaticPulseDendriticDelay", {}, syn_spec),
+                init_postsynaptic("ExpCurr", exp_curr_params),
                 init_sparse_connectivity("FixedNumberTotalWithReplacement", conn_spec))
 
             # Add size of this allocation to total
