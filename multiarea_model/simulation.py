@@ -303,13 +303,10 @@ class Simulation:
 
         print("Extra global parameters require: %u MB" % (self.extra_global_param_bytes / (1024 * 1024)))
 
-        if self.params['rebuild_model']:
-            self.model.build()
-            t4 = time.time()
-            self.time_genn_build = t4 - t3
-            print("Built GeNN model in {0:.2f} seconds.".format(self.time_genn_build))
-        else:
-            t4 = t3
+        self.model.build()
+        t4 = time.time()
+        self.time_genn_build = t4 - t3
+        print("Built GeNN model in {0:.2f} seconds.".format(self.time_genn_build))
            
         self.model.load(num_recording_timesteps=self.params['recording_buffer_timesteps'])
         t5 = time.time()
@@ -321,7 +318,7 @@ class Simulation:
             self.model.step_time()
             
             # If recording buffer is full
-            if (self.model.timestep % self.params['recording_buffer_timesteps']) != 0:
+            if (self.model.timestep % self.params['recording_buffer_timesteps']) == 0:
                 # Download recording data
                 self.model.pull_recording_buffers_from_device()
                 
@@ -354,6 +351,8 @@ class Simulation:
         d = {'time_prepare': self.time_prepare,
              'time_network_local': self.time_network_local,
              'time_network_global': self.time_network_global,
+             'time_genn_build': self.time_genn_build,
+             'time_genn_load': self.time_genn_load,
              'time_simulate': self.time_simulate}
 
         if self.params['timing_enabled']:
@@ -504,7 +503,7 @@ class Area:
             # Loop through GeNN populations in area
             for pop, genn_pop in iteritems(self.genn_pops):
                 # Extract spike recording data
-                spike_times, spike_ids = genn_pop.spike_recording_data
+                spike_times, spike_ids = genn_pop.spike_recording_data[0]
 
                 # Add spike times and ids to list
                 self.spike_times[pop].append(spike_times)

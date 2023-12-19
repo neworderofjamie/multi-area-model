@@ -54,8 +54,6 @@ sim_params = {
     'procedural_connectivity': True,
     # How many threads per spike should GeNN use?
     'num_threads_per_spike': 1,
-    # Should GeNN rebuild model or use existing code?
-    'rebuild_model': True,
     # How long should GeNN buffer recordings
     'recording_buffer_timesteps': 1000
 }
