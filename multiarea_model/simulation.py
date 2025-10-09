@@ -28,18 +28,26 @@ from copy import deepcopy
 from .default_params import nested_update, sim_params
 from .default_params import check_custom_params
 from dicthash import dicthash
-from pygenn import (GeNNModel, PlogSeverity, SpanType, VarLocation, 
-                    init_postsynaptic, init_sparse_connectivity,
-                    init_var, init_weight_update)
+from pygenn import (GeNNModel, PlogSeverity, VarAccess, VarLocation, 
+                    create_weight_update_model, init_postsynaptic, 
+                    init_sparse_connectivity, init_var, init_weight_update)
 from pygenn.cuda_backend import BlockSizeSelect, DeviceSelect
 from scipy.stats import norm
 from six import iteritems, itervalues
+from tqdm.auto import tqdm
 from .multiarea_helpers import extract_area_dict, create_vector_mask
 try:
     from .sumatra_helpers import register_runtime
     sumatra_found = True
 except ImportError:
     sumatra_found = False
+
+# Custom version of StaticPulseDendriticDelay model, allowing delays of greater than 256
+static_pulse_dendritic_delay16 = create_weight_update_model(
+        "static_pulse_dendritic_delay16",
+        vars=[("g", "scalar", VarAccess.READ_ONLY), 
+              ("d", "uint16_t", VarAccess.READ_ONLY)],
+        pre_spike_syn_code="addToPostDelay(g, d);")
 
 
 class Simulation:
@@ -159,6 +167,7 @@ class Simulation:
         self.model.timing_enabled = self.params['timing_enabled']
         self.model.default_var_location = VarLocation.DEVICE
         self.model.default_sparse_connectivity_location = VarLocation.DEVICE
+        self.model.default_narrow_sparse_ind_enabled = True
         self.model.seed = self.params['master_seed']
         
         quantile = 0.9999
@@ -314,17 +323,19 @@ class Simulation:
         print("Loaded GeNN model in {0:.2f} seconds.".format(self.time_genn_load))
         
         # Loop through simulation time
-        while self.model.t < self.T:
-            self.model.step_time()
-            
-            # If recording buffer is full
-            if (self.model.timestep % self.params['recording_buffer_timesteps']) == 0:
-                # Download recording data
-                self.model.pull_recording_buffers_from_device()
-                
-                # Loop through areas
-                for a in self.areas:
-                    a.record()
+        with tqdm(total=self.T) as pbar:
+            while self.model.t < self.T:
+                self.model.step_time()
+                pbar.update(self.model.dt)
+
+                # If recording buffer is full
+                if (self.model.timestep % self.params['recording_buffer_timesteps']) == 0:
+                    # Download recording data
+                    self.model.pull_recording_buffers_from_device()
+                    
+                    # Loop through areas
+                    for a in self.areas:
+                        a.record()
         
 
         t6 = time.time()
@@ -480,7 +491,7 @@ class Area:
                 poisson_params = {"weight": self.network.W[self.name][pop]['external']['external'] / 1000.0,
                                   "tauSyn": neuron_params['single_neuron_dict']['tau_syn_ex'],
                                   "rate": self.network.params['input_params']['rate_ext'] * self.external_synapses[pop]}
-                self.simulation.model.add_current_source(pop_name + "_poisson", "PoissonExp", pop_name,
+                self.simulation.model.add_current_source(pop_name + "_poisson", "PoissonExp", genn_pop,
                                                          poisson_params, poisson_init)
 
             # Add population to dictionary
@@ -623,19 +634,23 @@ def connect(simulation,
     for target in target_area.populations:
         for source in source_area.populations:
             num_connections = int(synapses[target][source])
-            conn_spec = {"total": num_connections}
+            conn_spec = {"num": num_connections}
 
             syn_weight = {"mean": W[target][source] / 1000.0, "sd": W_sd[target][source] / 1000.0}
             exp_curr_params = {}
             
             if target_area == source_area:
                 max_delay = simulation.max_inter_area_delay
+                assert max_delay < (256 * simulation.params['dt'])
+                weight_update_model = "StaticPulseDendriticDelay"
                 if 'E' in source:
                     mean_delay = network.params['delay_params']['delay_e']
                 elif 'I' in source:
                     mean_delay = network.params['delay_params']['delay_i']
             else:
                 max_delay = simulation.max_intra_area_delay
+                weight_update_model = static_pulse_dendritic_delay16
+                assert max_delay < (65536 * simulation.params['dt'])
                 v = network.params['delay_params']['interarea_speed']
                 s = network.distances[target_area.name][source_area.name]
                 mean_delay = s / v
@@ -661,18 +676,16 @@ def connect(simulation,
             source_genn_pop = source_area.genn_pops[source]
             target_genn_pop = target_area.genn_pops[target]
             syn_pop = simulation.model.add_synapse_population(source_genn_pop.name + "_" + target_genn_pop.name, 
-                matrix_type, 0,
-                source_genn_pop, target_genn_pop,
-                init_weight_update("StaticPulseDendriticDelay", {}, syn_spec),
+                matrix_type, source_genn_pop, target_genn_pop,
+                init_weight_update(weight_update_model, {}, syn_spec),
                 init_postsynaptic("ExpCurr", exp_curr_params),
                 init_sparse_connectivity("FixedNumberTotalWithReplacement", conn_spec))
 
             # Add size of this allocation to total
-            simulation.extra_global_param_bytes += source_genn_pop.size * num_sub_rows * 2
+            simulation.extra_global_param_bytes += source_genn_pop.num_neurons * num_sub_rows * 2
 
             # Set max dendritic delay and span type
             syn_pop.max_dendritic_delay_timesteps = int(round(max_delay / simulation.params['dt']))
 
             if simulation.params['procedural_connectivity']:
-                syn_pop.span_type = SpanType.PRESYNAPTIC
                 syn_pop.num_threads_per_spike = simulation.params['num_threads_per_spike']
