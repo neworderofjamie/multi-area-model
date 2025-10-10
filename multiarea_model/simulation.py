@@ -29,8 +29,9 @@ from .default_params import nested_update, sim_params
 from .default_params import check_custom_params
 from dicthash import dicthash
 from pygenn import (GeNNModel, PlogSeverity, VarAccess, VarLocation, 
-                    create_weight_update_model, init_postsynaptic, 
-                    init_sparse_connectivity, init_var, init_weight_update)
+                    create_neuron_model, create_weight_update_model,
+                    init_postsynaptic, init_sparse_connectivity, 
+                    init_var, init_weight_update)
 from pygenn.cuda_backend import BlockSizeSelect, DeviceSelect
 from scipy.stats import norm
 from six import iteritems, itervalues
@@ -48,7 +49,6 @@ static_pulse_dendritic_delay16 = create_weight_update_model(
         vars=[("g", "scalar", VarAccess.READ_ONLY), 
               ("d", "uint16_t", VarAccess.READ_ONLY)],
         pre_spike_syn_code="addToPostDelay(g, d);")
-
 
 class Simulation:
     def __init__(self, network, sim_spec):
@@ -106,6 +106,44 @@ class Simulation:
         self.areas_recorded = self.params['recording_dict']['areas_recorded']
         self.T = self.params['t_sim']
         self.extra_global_param_bytes = 0;
+
+        # Create neuron model
+        storage_type = "half" if self.params['half_precision'] else "scalar"
+        self.lif_model = create_neuron_model(
+            "lif",
+            sim_code="""
+                if (RefracTime <= 0.0) {
+                  scalar alpha = ((Isyn + Ioffset) * Rmembrane) + Vrest;
+                  V = alpha - (ExpTC * (alpha - V));
+                }
+                else {
+                  RefracTime -= dt;
+                }
+                """,
+            threshold_condition_code="RefracTime <= 0.0 && V >= Vthresh",
+            reset_code="""
+                V = Vreset;
+                RefracTime = TauRefrac;
+                """,
+            params=["C", "TauM", "Vrest", "Vreset","Vthresh","Ioffset","TauRefrac"],
+
+            derived_params=[("ExpTC", lambda pars, dt: np.exp(-dt / pars["TauM"])),
+                            ("Rmembrane", lambda pars, dt: pars["TauM"] / pars["C"])],
+            vars=[("V", "scalar", storage_type),
+                  ("RefracTime", "scalar", storage_type)])
+
+        self.static_pulse_dendritic_delay_model = create_weight_update_model(
+            "static_pulse_dendritic_delay",
+            vars=[("g", "scalar", storage_type, VarAccess.READ_ONLY), 
+                  ("d", "uint8_t", VarAccess.READ_ONLY)],
+            pre_spike_syn_code="addToPostDelay(g, d);")
+
+        self.static_pulse_dendritic_delay16_model = create_weight_update_model(
+            "static_pulse_dendritic_delay16",
+            vars=[("g", "scalar", storage_type, VarAccess.READ_ONLY), 
+                  ("d", "uint16_t", VarAccess.READ_ONLY)],
+            pre_spike_syn_code="addToPostDelay(g, d);")
+
 
     def __eq__(self, other):
         # Two simulations are equal if the simulation parameters and
@@ -481,7 +519,7 @@ class Area:
             # Create GeNN population
             pop_name = self.name + '_' + pop
             genn_pop = self.simulation.model.add_neuron_population(pop_name, int(self.neuron_numbers[pop]),
-                                                                   "LIF", pop_lif_params, lif_init)
+                                                                   self.lif_model, pop_lif_params, lif_init)
 
             genn_pop.spike_recording_enabled = True
 
@@ -642,14 +680,14 @@ def connect(simulation,
             if target_area == source_area:
                 max_delay = simulation.max_inter_area_delay
                 assert max_delay < (256 * simulation.params['dt'])
-                weight_update_model = "StaticPulseDendriticDelay"
+                weight_update_model = self.static_pulse_dendritic_delay_model
                 if 'E' in source:
                     mean_delay = network.params['delay_params']['delay_e']
                 elif 'I' in source:
                     mean_delay = network.params['delay_params']['delay_i']
             else:
                 max_delay = simulation.max_intra_area_delay
-                weight_update_model = static_pulse_dendritic_delay16
+                weight_update_model = self.static_pulse_dendritic_delay16_model
                 assert max_delay < (65536 * simulation.params['dt'])
                 v = network.params['delay_params']['interarea_speed']
                 s = network.distances[target_area.name][source_area.name]
