@@ -32,7 +32,8 @@ from pygenn import (GeNNModel, PlogSeverity, VarAccess, VarLocation,
                     create_neuron_model, create_weight_update_model,
                     init_postsynaptic, init_sparse_connectivity, 
                     init_var, init_weight_update)
-from pygenn.cuda_backend import BlockSizeSelect, DeviceSelect
+#from pygenn.cuda_backend import BlockSizeSelect, DeviceSelect
+
 from scipy.stats import norm
 from six import iteritems, itervalues
 from tqdm.auto import tqdm
@@ -200,9 +201,9 @@ class Simulation:
         Prepare GeNN model.
         """
         self.model = GeNNModel("float", "multi_area_model",
-                               code_gen_log_level=PlogSeverity.INFO, 
-                               device_select_method=DeviceSelect.MANUAL,
-                               block_size_select_method=BlockSizeSelect.MANUAL)
+                               code_gen_log_level=PlogSeverity.INFO) 
+                               #device_select_method=DeviceSelect.MANUAL,
+                               #block_size_select_method=BlockSizeSelect.MANUAL)
         self.model.dt = self.params['dt']
         self.model.fuse_postsynaptic_models = True
         self.model.timing_enabled = self.params['timing_enabled']
@@ -522,7 +523,7 @@ class Area:
             # Create GeNN population
             pop_name = self.name + '_' + pop
             genn_pop = self.simulation.model.add_neuron_population(pop_name, int(self.neuron_numbers[pop]),
-                                                                   self.lif_model, pop_lif_params, lif_init)
+                                                                   self.simulation.lif_model, pop_lif_params, lif_init)
 
             genn_pop.spike_recording_enabled = True
 
@@ -675,6 +676,9 @@ def connect(simulation,
     for target in target_area.populations:
         for source in source_area.populations:
             num_connections = int(synapses[target][source])
+            if num_connections == 0:
+                continue
+
             conn_spec = {"num": num_connections}
 
             syn_weight = {"mean": W[target][source] / 1000.0, "sd": W_sd[target][source] / 1000.0}
@@ -683,14 +687,14 @@ def connect(simulation,
             if target_area == source_area:
                 max_delay = simulation.max_inter_area_delay
                 assert max_delay < (256 * simulation.params['dt'])
-                weight_update_model = self.static_pulse_dendritic_delay_model
+                weight_update_model = simulation.static_pulse_dendritic_delay_model
                 if 'E' in source:
                     mean_delay = network.params['delay_params']['delay_e']
                 elif 'I' in source:
                     mean_delay = network.params['delay_params']['delay_i']
             else:
                 max_delay = simulation.max_intra_area_delay
-                weight_update_model = self.static_pulse_dendritic_delay16_model
+                weight_update_model = simulation.static_pulse_dendritic_delay16_model
                 assert max_delay < (65536 * simulation.params['dt'])
                 v = network.params['delay_params']['interarea_speed']
                 s = network.distances[target_area.name][source_area.name]
