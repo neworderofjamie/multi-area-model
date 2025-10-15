@@ -108,7 +108,8 @@ class Simulation:
         self.extra_global_param_bytes = 0;
 
         # Create neuron model
-        storage_type = "half" if self.params['half_precision'] else "scalar"
+        neuron_storage_type = ("half" if self.params['half_precision_neurons']
+                               else "scalar")
         self.lif_model = create_neuron_model(
             "lif",
             sim_code="""
@@ -129,9 +130,11 @@ class Simulation:
 
             derived_params=[("ExpTC", lambda pars, dt: np.exp(-dt / pars["TauM"])),
                             ("Rmembrane", lambda pars, dt: pars["TauM"] / pars["C"])],
-            vars=[("V", "scalar", storage_type),
-                  ("RefracTime", "scalar", storage_type)])
-
+            vars=[("V", "scalar", neuron_storage_type),
+                  ("RefracTime", "scalar", neuron_storage_type)])
+        
+        weight_storage_type = ("half" if self.params['half_precision_weights']
+                               else "scalar")
         self.static_pulse_dendritic_delay_model = create_weight_update_model(
             "static_pulse_dendritic_delay",
             vars=[("g", "scalar", storage_type, VarAccess.READ_ONLY), 

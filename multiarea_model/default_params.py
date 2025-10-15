@@ -52,8 +52,10 @@ sim_params = {
     'timing_enabled': True,
     # Should GeNN use procedural connectivity?
     'procedural_connectivity': True,
-    # Should GeNN use half precision?
-    'half_precision': False,
+    # Should GeNN use half precision for weights?
+    'half_precision_weights': False,
+    # Should GeNN use half precision for neuron state?
+    'half_precision_neurons': False,
     # How many threads per spike should GeNN use?
     'num_threads_per_spike': 1,
     # How long should GeNN buffer recordings
