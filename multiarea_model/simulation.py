@@ -138,13 +138,13 @@ class Simulation:
                                else "scalar")
         self.static_pulse_dendritic_delay_model = create_weight_update_model(
             "static_pulse_dendritic_delay",
-            vars=[("g", "scalar", storage_type, VarAccess.READ_ONLY), 
+            vars=[("g", "scalar", weight_storage_type, VarAccess.READ_ONLY), 
                   ("d", "uint8_t", VarAccess.READ_ONLY)],
             pre_spike_syn_code="addToPostDelay(g, d);")
 
         self.static_pulse_dendritic_delay16_model = create_weight_update_model(
             "static_pulse_dendritic_delay16",
-            vars=[("g", "scalar", storage_type, VarAccess.READ_ONLY), 
+            vars=[("g", "scalar", weight_storage_type, VarAccess.READ_ONLY), 
                   ("d", "uint16_t", VarAccess.READ_ONLY)],
             pre_spike_syn_code="addToPostDelay(g, d);")
 
