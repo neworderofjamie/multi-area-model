@@ -490,15 +490,24 @@ class Area:
         Create all populations of the area.
         """
         neuron_params = self.network.params['neuron_params']
-        v_init_params = {"mean": neuron_params['V0_mean'], "sd": neuron_params['V0_sd']}
-        lif_init = {"RefracTime": 0.0, "V": init_var("Normal", v_init_params)}
-        lif_params = {"C": neuron_params['single_neuron_dict']['C_m'] / 1000.0, 
-                      "TauM": neuron_params['single_neuron_dict']['tau_m'], 
-                      "Vrest": neuron_params['single_neuron_dict']['E_L'], 
-                      "Vreset": neuron_params['single_neuron_dict']['V_reset'], 
-                      "Vthresh" : neuron_params['single_neuron_dict']['V_th'],
-                      "TauRefrac": neuron_params['single_neuron_dict']['t_ref']}
 
+        if network_params['normalize_voltage']:
+            v_scale = neuron_params['single_neuron_dict']['V_th'] - neuron_params['single_neuron_dict']['E_L']
+            v_affine_fn = lambda v: (v - neuron_params['single_neuron_dict']['E_L']) / v_scale
+        else:
+            v_scale = 1.0
+            v_affine_fn lambda v: v
+
+        v_init_params = {"mean": v_affine_fn(neuron_params['V0_mean']), 
+                         "sd": (neuron_params['V0_sd'] / v_scale)}
+        lif_init = {"RefracTime": 0.0, "V": init_var("Normal", v_init_params)}
+        lif_params = {"C": (neuron_params['single_neuron_dict']['C_m'] / 1000.0) * v_scale, 
+                      "TauM": neuron_params['single_neuron_dict']['tau_m'], 
+                      "Vrest": v_affine_fn(neuron_params['single_neuron_dict']['E_L']),
+                      "Vreset": v_affine_fn(neuron_params['single_neuron_dict']['V_reset']),
+                      "Vthresh" : v_affine_fn(neuron_params['single_neuron_dict']['V_th']),
+                      "TauRefrac": neuron_params['single_neuron_dict']['t_ref']}
+        print(lif_params, v_int_params)
         poisson_init = {"current": 0.0}
 
         self.genn_pops = {}

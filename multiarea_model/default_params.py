@@ -114,6 +114,8 @@ single_neuron_dict = {
 neuron_params = {
     # neuron model
     'neuron_model': 'iaf_psc_exp',
+    # Should we rescale neuron parameters so resting voltage is 0 and threshold 1?
+    'normalize_voltage': False,
     # neuron parameters
     'single_neuron_dict': single_neuron_dict,
     # Mean and standard deviation for the
