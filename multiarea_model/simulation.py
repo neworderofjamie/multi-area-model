@@ -491,12 +491,12 @@ class Area:
         """
         neuron_params = self.network.params['neuron_params']
 
-        if network_params['normalize_voltage']:
+        if neuron_params['normalize_voltage']:
             v_scale = neuron_params['single_neuron_dict']['V_th'] - neuron_params['single_neuron_dict']['E_L']
             v_affine_fn = lambda v: (v - neuron_params['single_neuron_dict']['E_L']) / v_scale
         else:
             v_scale = 1.0
-            v_affine_fn lambda v: v
+            v_affine_fn = lambda v: v
 
         v_init_params = {"mean": v_affine_fn(neuron_params['V0_mean']), 
                          "sd": (neuron_params['V0_sd'] / v_scale)}
@@ -507,7 +507,6 @@ class Area:
                       "Vreset": v_affine_fn(neuron_params['single_neuron_dict']['V_reset']),
                       "Vthresh" : v_affine_fn(neuron_params['single_neuron_dict']['V_th']),
                       "TauRefrac": neuron_params['single_neuron_dict']['t_ref']}
-        print(lif_params, v_int_params)
         poisson_init = {"current": 0.0}
 
         self.genn_pops = {}
