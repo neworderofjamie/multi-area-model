@@ -109,30 +109,58 @@ class Simulation:
         self.extra_global_param_bytes = 0;
 
         # Create neuron model
-        neuron_storage_type = ("half" if self.params['half_precision_neurons']
-                               else "scalar")
-        self.lif_model = create_neuron_model(
-            "lif",
-            sim_code="""
-                if (RefracTime <= 0.0) {
-                  scalar alpha = ((Isyn + Ioffset) * Rmembrane) + Vrest;
-                  V = alpha - (ExpTC * (alpha - V));
-                }
-                else {
-                  RefracTime -= dt;
-                }
-                """,
-            threshold_condition_code="RefracTime <= 0.0 && V >= Vthresh",
-            reset_code="""
-                V = Vreset;
-                RefracTime = TauRefrac;
-                """,
-            params=["C", "TauM", "Vrest", "Vreset","Vthresh","Ioffset","TauRefrac"],
+        if self.params['integer_neurons']:
+            assert self.network.params['neuron_params']['normalize_voltage']
+            self.lif_model = create_neuron_model(
+                "lif",
+                sim_code="""
+                    scalar VFloat = (V / 32767.0);
+                    if (RefracTime <= 0) {
+                      scalar alpha = ((Isyn + Ioffset) * Rmembrane) + Vrest;
+                      VFloat = alpha - (ExpTC * (alpha - VFloat));
+                    }
+                    else {
+                      RefracTime--;
+                    }
+                    V = max(-32768, min(32767, (int)round(VFloat * 32767.0)));
+                    """,
+                threshold_condition_code="RefracTime <= 0 && VFloat >= Vthresh",
+                reset_code="""
+                    V = Vreset;
+                    RefracTime = TauRefracTimestep;
+                    """,
+                params=["C", "TauM", "Vrest", "Vreset","Vthresh","Ioffset","TauRefrac"],
 
-            derived_params=[("ExpTC", lambda pars, dt: np.exp(-dt / pars["TauM"])),
-                            ("Rmembrane", lambda pars, dt: pars["TauM"] / pars["C"])],
-            vars=[("V", "scalar", neuron_storage_type),
-                  ("RefracTime", "scalar", neuron_storage_type)])
+                derived_params=[("ExpTC", lambda pars, dt: np.exp(-dt / pars["TauM"])),
+                                ("Rmembrane", lambda pars, dt: pars["TauM"] / pars["C"]),
+                                ("TauRefracTimestep", lambda pars, dt: int(round(pars["TauRefrac"] / dt)))],
+                vars=[("V", "int16_t"),
+                      ("RefracTime", "int16_t")])
+        else:
+            neuron_storage_type = ("half" if self.params['half_precision_neurons']
+                                   else "scalar")
+            self.lif_model = create_neuron_model(
+                "lif",
+                sim_code="""
+                    if (RefracTime <= 0.0) {
+                      scalar alpha = ((Isyn + Ioffset) * Rmembrane) + Vrest;
+                      V = alpha - (ExpTC * (alpha - V));
+                    }
+                    else {
+                      RefracTime -= dt;
+                    }
+                    """,
+                threshold_condition_code="RefracTime <= 0.0 && V >= Vthresh",
+                reset_code="""
+                    V = Vreset;
+                    RefracTime = TauRefrac;
+                    """,
+                params=["C", "TauM", "Vrest", "Vreset","Vthresh","Ioffset","TauRefrac"],
+
+                derived_params=[("ExpTC", lambda pars, dt: np.exp(-dt / pars["TauM"])),
+                                ("Rmembrane", lambda pars, dt: pars["TauM"] / pars["C"])],
+                vars=[("V", "scalar", neuron_storage_type),
+                      ("RefracTime", "scalar", neuron_storage_type)])
         
         weight_storage_type = ("half" if self.params['half_precision_weights']
                                else "scalar")

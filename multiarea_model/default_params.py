@@ -56,6 +56,8 @@ sim_params = {
     'half_precision_weights': False,
     # Should GeNN use half precision for neuron state?
     'half_precision_neurons': False,
+    # Should GeNN use integers for neuron state?
+    'integer_neurons': False,
     # How many threads per spike should GeNN use?
     'num_threads_per_spike': 1,
     # How long should GeNN buffer recordings
